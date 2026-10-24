@@ -32,14 +32,14 @@ async def sets(db: Session = Depends(get_db)):
     cached = await redis_client.get(key)
     if cached:
         return JSONResponse(content=json.loads(cached))
-    rows = db.execute("""
-        SELECT raw_json
-        FROM cards
-        WHERE set_code IS NOT NULL
-        LIMIT 1
-    """).fetchall()
-    if rows and rows[0][0]:
-        return JSONResponse(content=rows[0][0])
+
+    row = db.execute(
+        text("SELECT raw_json FROM cards WHERE set_code IS NOT NULL LIMIT 1")
+    ).first()
+
+    if row is not None and row[0] is not None:
+        return JSONResponse(content=row[0])
+
     data = await get_sets()
     await redis_client.set(key, json.dumps(data), ex=settings.card_cache_ttl_seconds)
     return data
