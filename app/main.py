@@ -6,8 +6,10 @@ from pathlib import Path
 import redis.asyncio as redis
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.config import get_settings
 from app.db import get_card_by_id, get_card_by_name, get_db, get_query_cache, save_cards, save_query_cache
@@ -47,6 +49,29 @@ async def startup() -> None:
     from app.db import init_db
 
     init_db()
+
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    if exc.status_code == 404:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "object": "error",
+                "code": "not_found",
+                "status": 404,
+                "details": exc.detail or "No card found with the given ID or set code and collector number.",
+            },
+        )
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "object": "error",
+            "code": "bad_request" if exc.status_code == 400 else "error",
+            "status": exc.status_code,
+            "details": exc.detail,
+        },
+    )
 
 
 @app.get("/")
