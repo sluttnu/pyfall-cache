@@ -7,6 +7,7 @@ import redis.asyncio as redis
 from fastapi import FastAPI, Query, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal, get_db, get_card_by_id, get_card_by_name, save_cards, get_query_cache, save_query_cache
