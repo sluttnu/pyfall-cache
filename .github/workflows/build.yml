@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [temp-remove-main]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -14,8 +14,8 @@ jobs:
     secrets:
       DEPLOY_DISPATCH_TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
     with:
-      app: scryfall-cache
-      image: ghcr.io/sluttnu/scryfall-cache
+      app: pyfall-cache
+      image: ghcr.io/sluttnu/pyfall-cache
       context: .
       dockerfile: Dockerfile
       dispatch_repo: sluttnu/sluttvps-docker
