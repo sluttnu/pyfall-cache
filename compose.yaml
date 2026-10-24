@@ -1,0 +1,51 @@
+services:
+  pyfall-cache:
+    image: ghcr.io/sluttnu/pyfall-cache:${TAG:-latest}
+    container_name: pyfall-cache
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app
+      - proxy
+    environment:
+      APP_PORT: 8080
+      DATABASE_URL: postgresql+psycopg://scryfall:scryfall@postgres:5432/scryfall
+      REDIS_URL: redis://redis:6379/0
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pyfall-cache-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scryfall
+      POSTGRES_USER: scryfall
+      POSTGRES_PASSWORD: scryfall
+    volumes:
+      - pyfall-postgres-data:/var/lib/postgresql/data
+    networks:
+      - app
+
+  redis:
+    image: redis:7-alpine
+    container_name: pyfall-cache-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - pyfall-redis-data:/data
+    networks:
+      - app
+
+volumes:
+  pyfall-postgres-data:
+  pyfall-redis-data:
+
+networks:
+  app:
+    driver: bridge
+  proxy:
+    external: true
+    name: proxy
