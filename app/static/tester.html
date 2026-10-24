@@ -247,9 +247,7 @@
         let payload = text;
         try {
           payload = JSON.parse(text);
-        } catch {
-          // leave raw text if needed
-        }
+        } catch {}
 
         return {
           ok: res.ok,
@@ -351,7 +349,7 @@
       clearOutput();
       const ready = document.createElement('div');
       ready.className = 'panel';
-      ready.innerHTML = '<h2>Ready</h2><div class=\"muted\">Click “Run all comparisons” to compare cache vs upstream results.</div>';
+      ready.innerHTML = '<h2>Ready</h2><div class=\"muted\">Click “Run all comparisons” to fetch and print the returned values.</div>';
       output.appendChild(ready);
     </script>
   </body>
