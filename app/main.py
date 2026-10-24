@@ -163,6 +163,33 @@ async def index() -> HTMLResponse:
         border-top: none;
         padding-top: 0;
       }
+
+      details.endpoint-row {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 14px 0;
+        margin-bottom: 16px;
+      }
+
+      details.endpoint-row summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 12px;
+        font-weight: 600;
+      }
+
+      details.endpoint-row summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.endpoint-row pre {
+        margin: 0 0 12px;
+      }
     </style>
   </head>
   <body>
@@ -196,18 +223,22 @@ async def index() -> HTMLResponse:
       }
 
       function addSection(title, content, status = 'warn') {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'endpoint-row';
+        const details = document.createElement('details');
+        details.className = 'endpoint-row';
+        details.open = false;
 
-        const header = document.createElement('h2');
-        header.innerHTML = `${escapeHtml(title)} <span class="status ${status}">${status.toUpperCase()}</span>`;
+        const summary = document.createElement('summary');
+        summary.innerHTML = `
+          <span>${escapeHtml(title)}</span>
+          <span class="status ${status}">${status.toUpperCase()}</span>
+        `;
 
         const pre = document.createElement('pre');
-        pre.innerHTML = escapeHtml(content);
+        pre.textContent = typeof content === 'string' ? content : pretty(content);
 
-        wrapper.appendChild(header);
-        wrapper.appendChild(pre);
-        output.appendChild(wrapper);
+        details.appendChild(summary);
+        details.appendChild(pre);
+        output.appendChild(details);
       }
 
       function clearOutput() {
