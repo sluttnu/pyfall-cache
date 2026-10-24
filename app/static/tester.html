@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pyfall Cache Comparison Tester</title>
+    <style>
+      :root {
+        --bg: #111827;
+        --panel: #1f2937;
+        --panel-alt: #0f172a;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --accent: #60a5fa;
+        --ok: #22c55e;
+        --warn: #f59e0b;
+        --error: #ef4444;
+        --border: #374151;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      .container {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+      }
+
+      .muted {
+        color: var(--muted);
+        margin-bottom: 20px;
+      }
+
+      .controls {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+
+      button {
+        background: var(--accent);
+        color: #08111d;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: #374151;
+        color: var(--text);
+      }
+
+      .compare-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 1.05rem;
+      }
+
+      .status {
+        display: inline-block;
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+
+      .status.ok { background: rgba(34,197,94,0.2); color: var(--ok); }
+      .status.bad { background: rgba(239,68,68,0.2); color: var(--error); }
+      .status.warn { background: rgba(245,158,11,0.2); color: var(--warn); }
+
+      details.endpoint-row {
+        background: var(--panel-alt);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+
+      details.endpoint-row summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        font-weight: 700;
+      }
+
+      details.endpoint-row summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.endpoint-row pre {
+        margin: 0;
+        padding: 12px 14px 14px;
+        background: #0b1220;
+        color: #dbeafe;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .result-box {
+        background: #0b1220;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px;
+        min-height: 110px;
+      }
+
+      .result-box h4 {
+        margin: 0 0 8px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      .result-box pre {
+        background: transparent;
+        border: none;
+        padding: 0;
+        min-height: 90px;
+      }
+
+      .compare-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      @media (max-width: 980px) {
+        .compare-grid,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Pyfall Cache vs Scryfall</h1>
+      <div class="muted">
+        Left side = your cache (https://scryfall.slutt.nu)<br />
+        Right side = live upstream Scryfall (https://api.scryfall.com)
+      </div>
+
+      <div class="controls">
+        <button id="run-all">Run all comparisons</button>
+        <button id="clear" class="secondary">Clear</button>
+      </div>
+
+      <div id="output"></div>
+    </div>
+
+    <script>
+      const CACHE_URL = 'https://scryfall.slutt.nu';
+      const SCRYFALL_URL = 'https://api.scryfall.com';
+
+      const output = document.getElementById('output');
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function pretty(value) {
+        if (typeof value === 'string') return value;
+        return JSON.stringify(value, null, 2);
+      }
+
+      function deepEqual(a, b) {
+        if (a === b) return true;
+        if (a == null || b == null) return a === b;
+        if (Array.isArray(a) && Array.isArray(b)) {
+          if (a.length !== b.length) return false;
+          for (let i = 0; i < a.length; i++) {
+            if (!deepEqual(a[i], b[i])) return false;
+          }
+          return true;
+        }
+        if (typeof a === 'object' && typeof b === 'object') {
+          const aKeys = Object.keys(a).sort();
+          const bKeys = Object.keys(b).sort();
+          if (aKeys.length !== bKeys.length) return false;
+          for (const key of aKeys) {
+            if (!deepEqual(a[key], b[key])) return false;
+          }
+          return true;
+        }
+        return false;
+      }
+
+      function normalizeResponse(value) {
+        if (typeof value === 'string') {
+          try {
+            return JSON.parse(value);
+          } catch {
+            return value;
+          }
+        }
+        return value;
+      }
+
+      async function fetchJson(url, init = {}) {
+        const res = await fetch(url, { ...init, headers: { Accept: 'application/json', ...(init.headers || {}) } });
+        const text = await res.text();
+
+        let payload = text;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          // leave raw text if needed
+        }
+
+        return {
+          ok: res.ok,
+          status: res.status,
+          statusText: res.statusText,
+          redirected: res.redirected,
+          url: res.url,
+          payload: normalizeResponse(payload),
+          rawText: text,
+          headers: Object.fromEntries(res.headers.entries())
+        };
+      }
+
+      function addComparisonRow(name, cacheResult, upstreamResult) {
+        const details = document.createElement('details');
+        details.className = 'endpoint-row';
+        details.open = true;
+
+        const summary = document.createElement('summary');
+
+        const match = cacheResult.ok && upstreamResult.ok && deepEqual(cacheResult.payload, upstreamResult.payload);
+        const matchLabel = match ? '✓ MATCH' : '✗ DIFFERENT';
+        const matchClass = match ? 'ok' : 'bad';
+
+        summary.innerHTML = `
+          <span>${escapeHtml(name)}</span>
+          <span class="status ${matchClass}">${matchLabel}</span>
+        `;
+
+        const compare = document.createElement('div');
+        compare.className = 'two-col';
+
+        const left = document.createElement('div');
+        left.className = 'result-box';
+        left.innerHTML = `
+          <h4>Cache: ${cacheResult.status} ${cacheResult.statusText}</h4>
+          <pre>${escapeHtml(pretty(cacheResult.payload))}</pre>
+        `;
+
+        const right = document.createElement('div');
+        right.className = 'result-box';
+        right.innerHTML = `
+          <h4>Upstream: ${upstreamResult.status} ${upstreamResult.statusText}</h4>
+          <pre>${escapeHtml(pretty(upstreamResult.payload))}</pre>
+        `;
+
+        details.appendChild(summary);
+        details.appendChild(compare);
+        output.appendChild(details);
+      }
+
+      function clearOutput() {
+        output.innerHTML = '';
+      }
+
+      async function runComparison(name, cachePath, upstreamPath) {
+        let cacheResult;
+        let upstreamResult;
+
+        try {
+          cacheResult = await fetchJson(`${CACHE_URL}${cachePath}`);
+        } catch (err) {
+          cacheResult = { ok: false, status: 0, statusText: 'fetch error', payload: { error: String(err) } };
+        }
+
+        try {
+          upstreamResult = await fetchJson(`${SCRYFALL_URL}${upstreamPath}`);
+        } catch (err) {
+          upstreamResult = { ok: false, status: 0, statusText: 'fetch error', payload: { error: String(err) } };
+        }
+
+        addComparisonRow(name, cacheResult, upstreamResult);
+      }
+
+      async function runAllComparisons() {
+        clearOutput();
+
+        const testCases = [
+          ['GET /health', '/health', '/health'],
+          ['GET /sets', '/sets', '/sets'],
+          ['GET /cards/search?q=set:lea&unique=prints&limit=1', '/cards/search?q=set:lea&unique=prints&limit=1', '/cards/search?q=set:lea&unique=prints&limit=1'],
+          ['GET /cards/named?exact=Lightning+Bolt', '/cards/named?exact=Lightning+Bolt', '/cards/named?exact=Lightning+Bolt'],
+          ['GET /cards/autocomplete?q=light', '/cards/autocomplete?q=light', '/cards/autocomplete?q=light'],
+          ['GET /cards/random', '/cards/random', '/cards/random'],
+          ['GET /cards/collection', '/cards/collection', '/cards/collection'],
+          ['GET /cards/lea/161', '/cards/lea/161', '/cards/lea/161'],
+          ['GET /cards/{id}', '/cards/d573ef03-4730-45aa-93dd-e45ac1dbaf4a', '/cards/d573ef03-4730-45aa-93dd-e45ac1dbaf4a'],
+          ['GET /cards/{id}/image', '/cards/d573ef03-4730-45aa-93dd-e45ac1dbaf4a/image', '/cards/d573ef03-4730-45aa-93dd-e45ac1dbaf4a/image'],
+          ['GET /cards/{id}/art', '/cards/d573ef03-4730-45aa-93dd-e45ac1dbaf4a/art', '/cards/d573ef03-4730-45aa-93dd-e45ac1dbaf4a/art']
+        ];
+
+        for (const [label, cachePath, upstreamPath] of testCases) {
+          await runComparison(label, cachePath, upstreamPath);
+        }
+      }
+
+      document.getElementById('run-all').addEventListener('click', runAllComparisons);
+      document.getElementById('clear').addEventListener('click', clearOutput);
+      clearOutput();
+      const ready = document.createElement('div');
+      ready.className = 'panel';
+      ready.innerHTML = '<h2>Ready</h2><div class=\"muted\">Click “Run all comparisons” to compare cache vs upstream results.</div>';
+      output.appendChild(ready);
+    </script>
+  </body>
+</html>
