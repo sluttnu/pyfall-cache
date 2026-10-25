@@ -5,8 +5,8 @@ from pathlib import Path
 
 import redis.asyncio as redis
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.requests import Request
@@ -30,8 +30,8 @@ from app.scryfall import (
     get_set_by_tcgplayer,
     get_sets,
     hash_query,
-    pick_art_url,
-    pick_image_url,
+    resolve_art_url,
+    resolve_image_url,
     search_cards,
 )
 
@@ -47,8 +47,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.on_event("startup")
 async def startup() -> None:
     from app.db import init_db
-
     init_db()
+
 
 @app.exception_handler(FastAPIHTTPException)
 async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
@@ -98,7 +98,7 @@ async def sets() -> JSONResponse:
 
 
 @app.get("/sets/{set_ref}")
-async def set_by_ref(set_ref: str) -> dict[str, Any] | None:
+async def set_by_ref(set_ref: str) -> dict[str, Any]:
     data = await get_set(set_ref)
     if data is None:
         raise HTTPException(status_code=404, detail="Set not found")
@@ -106,7 +106,7 @@ async def set_by_ref(set_ref: str) -> dict[str, Any] | None:
 
 
 @app.get("/sets/tcgplayer/{tcgplayer_id}")
-async def set_by_tcgplayer(tcgplayer_id: str) -> dict[str, Any] | None:
+async def set_by_tcgplayer(tcgplayer_id: str) -> dict[str, Any]:
     data = await get_set_by_tcgplayer(tcgplayer_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Set not found")
@@ -194,6 +194,7 @@ async def cards_collection(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     if not identifiers:
         raise HTTPException(status_code=400, detail="identifiers required")
 
+    # Accept Scryfall-like identifier objects; this route is valid upstream.
     card_ids: list[str] = []
     for item in identifiers:
         if isinstance(item, dict):
@@ -201,6 +202,15 @@ async def cards_collection(payload: dict[str, Any] = Body(...)) -> dict[str, Any
                 card_ids.append(str(item["id"]))
             elif "multiverse_id" in item:
                 card_ids.append(str(item["multiverse_id"]))
+            elif "name" in item:
+                # best-effort local lookup
+                card = await fetch_scryfall_card_by_name(str(item["name"]), exact=False)
+                if card is not None:
+                    card_ids.append(str(card["id"]))
+            elif "set" in item and "collector_number" in item:
+                card = await get_card_by_set_code_number(str(item["set"]), str(item["collector_number"]))
+                if card is not None:
+                    card_ids.append(str(card["id"]))
         else:
             card_ids.append(str(item))
 
@@ -258,26 +268,42 @@ async def card_by_cardmarket(cardmarket_id: str) -> dict[str, Any]:
 
 
 @app.get("/cards/{card_id}")
-async def card_by_id(card_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+async def card_by_id(
+    card_id: str,
+    format: str | None = Query(default=None, alias="format"),
+    version: str | None = Query(default=None, alias="version"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any] | RedirectResponse:
     cached = get_card_by_id(db, card_id)
     if cached:
-        return cached
+        if format in {"image", "file"}:
+            image_url = resolve_image_url(cached, version or "large")
+            if image_url:
+                return RedirectResponse(url=image_url)
+        if format is None:
+            return cached
 
     card = await fetch_scryfall_card_by_id(card_id)
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
 
     save_cards(db, [card])
+
+    if format in {"image", "file"}:
+        image_url = resolve_image_url(card, version or "large")
+        if image_url:
+            return RedirectResponse(url=image_url)
+
     return card
 
 
 @app.get("/cards/{card_id}/image")
-async def card_image(card_id: str) -> RedirectResponse:
+async def card_image(card_id: str, version: str | None = None):
     card = await fetch_scryfall_card_by_id(card_id)
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
 
-    image_url = pick_image_url(card)
+    image_url = resolve_image_url(card, version or "large")
     if not image_url:
         raise HTTPException(status_code=404, detail="Card image not available")
 
@@ -285,12 +311,12 @@ async def card_image(card_id: str) -> RedirectResponse:
 
 
 @app.get("/cards/{card_id}/art")
-async def card_art(card_id: str) -> RedirectResponse:
+async def card_art(card_id: str, version: str | None = None):
     card = await fetch_scryfall_card_by_id(card_id)
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
 
-    art_url = pick_art_url(card)
+    art_url = resolve_art_url(card, version or "art_crop")
     if not art_url:
         raise HTTPException(status_code=404, detail="Card art not available")
 

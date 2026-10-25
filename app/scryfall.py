@@ -30,6 +30,31 @@ async def rate_limited_get(url: str, params: dict[str, Any] | None = None) -> di
     return response.json()
 
 
+def resolve_image_url(card: dict[str, Any], version: str = "large") -> str | None:
+    if not isinstance(card, dict):
+        return None
+
+    image_uris = card.get("image_uris") or {}
+    if image_uris.get(version):
+        return image_uris[version]
+
+    for face in card.get("card_faces") or []:
+        face_images = face.get("image_uris") or {}
+        if face_images.get(version):
+            return face_images[version]
+
+    # fallback for common image sizes
+    for key in ("normal", "large", "png", "art_crop", "border_crop"):
+        if image_uris.get(key):
+            return image_uris[key]
+
+    return None
+
+
+def resolve_art_url(card: dict[str, Any], version: str = "art_crop") -> str | None:
+    return resolve_image_url(card, version=version)
+
+
 async def get_sets() -> dict[str, Any]:
     return await rate_limited_get("/sets")
 
@@ -86,11 +111,7 @@ async def get_card_by_id(card_id: str) -> dict[str, Any] | None:
         raise
 
 
-async def get_card_by_set_code_number(
-    code: str,
-    number: str,
-    lang: str | None = None,
-) -> dict[str, Any] | None:
+async def get_card_by_set_code_number(code: str, number: str, lang: str | None = None) -> dict[str, Any] | None:
     path = f"/cards/{code}/{number}"
     if lang:
         path = f"{path}/{lang}"
@@ -169,42 +190,6 @@ async def get_random_card() -> dict[str, Any] | None:
         if exc.response.status_code == 404:
             return None
         raise
-
-
-def pick_image_url(card: dict[str, Any]) -> str | None:
-    if not isinstance(card, dict):
-        return None
-
-    image_uris = card.get("image_uris") or {}
-    for key in ("normal", "large", "png", "border_crop"):
-        if image_uris.get(key):
-            return image_uris[key]
-
-    for face in card.get("card_faces") or []:
-        face_images = face.get("image_uris") or {}
-        for key in ("normal", "large", "png", "border_crop"):
-            if face_images.get(key):
-                return face_images[key]
-
-    return None
-
-
-def pick_art_url(card: dict[str, Any]) -> str | None:
-    if not isinstance(card, dict):
-        return None
-
-    image_uris = card.get("image_uris") or {}
-    for key in ("art_crop", "border_crop", "large"):
-        if image_uris.get(key):
-            return image_uris[key]
-
-    for face in card.get("card_faces") or []:
-        face_images = face.get("image_uris") or {}
-        for key in ("art_crop", "border_crop", "large"):
-            if face_images.get(key):
-                return face_images[key]
-
-    return None
 
 
 def hash_query(query: str) -> str:
