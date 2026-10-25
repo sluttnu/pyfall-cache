@@ -205,30 +205,24 @@
         return JSON.stringify(value, null, 2);
       }
 
-      function deepEqual(a, b) {
-        if (a === b) return true;
-        if (a == null || b == null) return a === b;
-
-        if (Array.isArray(a) && Array.isArray(b)) {
-          if (a.length !== b.length) return false;
-          for (let i = 0; i < a.length; i++) {
-            if (!deepEqual(a[i], b[i])) return false;
-          }
-          return true;
+      function canonicalize(value) {
+        if (Array.isArray(value)) {
+          return value.map(v => canonicalize(v));
         }
 
-        if (typeof a === "object" && typeof b === "object") {
-          const aKeys = Object.keys(a).sort();
-          const bKeys = Object.keys(b).sort();
-          if (aKeys.length !== bKeys.length) return false;
-
-          for (const key of aKeys) {
-            if (!deepEqual(a[key], b[key])) return false;
+        if (value && typeof value === "object") {
+          const sorted = {};
+          for (const key of Object.keys(value).sort()) {
+            sorted[key] = canonicalize(value[key]);
           }
-          return true;
+          return sorted;
         }
 
-        return false;
+        return value;
+      }
+
+      function deepEqualCanonical(a, b) {
+        return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
       }
 
       function normalizeResponse(value) {
@@ -278,7 +272,7 @@
         details.open = true;
 
         const summary = document.createElement("summary");
-        const match = cacheResult.ok && upstreamResult.ok && deepEqual(cacheResult.payload, upstreamResult.payload);
+        const match = cacheResult.ok && upstreamResult.ok && deepEqualCanonical(cacheResult.payload, upstreamResult.payload);
         const statusClass = match ? "match" : "mismatch";
         const statusLabel = match ? "✓ MATCH" : "✗ DIFFERENT";
 
